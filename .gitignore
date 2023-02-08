@@ -5,3 +5,9 @@ data/
 .ipynb_checkpoints/
 
 __pycache__/
+
+.vs/
+
+bin/
+
+obj/

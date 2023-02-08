@@ -4,6 +4,8 @@ import numpy as np
 from itertools import product
 import tensorflow as tf
 from keras.callbacks import EarlyStopping
+tf.config.run_functions_eagerly(True)
+tf.data.experimental.enable_debug_mode()
 
 log = "hospital"
 timestep = 1

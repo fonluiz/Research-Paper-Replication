@@ -2,31 +2,44 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Xml.Linq;
+using System.Diagnostics;
 
 namespace MLatBPM_DataPreprocessing
 {
     class Program
     {
+        // Add variables for the tags inside the XES file. 
+        public const string tag_trace = "trace";  // For RTFM is "trace" for all the other logs is "{http://www.xes-standard.org/}trace"
+        public const string tag_event = "event";  // For RTFM is "event" for all the other logs is "{http://www.xes-standard.org/}event"
         static void Main(string[] args)
         {
+            int numberOfEvents = 6; //Number of events included in data. It goes from 1 up to ... BPIC11: 10, BPIC13: 10, RTFM: 6, RL: 10.
+            string keyTraceIdentifier = "concept:name"; //Trace Identifier needs to be removed from data because it is not valid to train on an ID
 
             //#######################################################################################
             //relevant variables to be defined for each log individually
             //#######################################################################################
-            //XDocument doc = XDocument.Load("...\\Machine Learning for predictive risk-aware BPM - Dokumente\\Code\\Data\\hospital_short.xes");
-            //XDocument doc = XDocument.Load("..\\Machine Learning for predictive risk-aware BPM - Dokumente\\Code\\Data\\incident_short.xes");
-            XDocument doc = XDocument.Load("...\\Machine Learning for predictive risk-aware BPM - Dokumente\\Code\\Data\\Data_FixedHeader\\BPIC2011_hospital_log.xes"); 
-            //XDocument doc = XDocument.Load("...\\Machine Learning for predictive risk-aware BPM - Dokumente\\Code\\Data\\Raw Data\\RL_review_example_large.xes");
-            string keyTraceIdentifier = "concept:name"; //Trace Identifier needs to be removed from data because it is not valid to train on an ID
-            int numberOfEvents = 3; //Number of events included in data. 
-            string outputPathInclFileName = "...\\Machine Learning for predictive risk-aware BPM - Dokumente\\Code\\Data\\Incident_short_transformed.csv";
-            
-
+            // BPIC11
+            //XDocument doc = XDocument.Load("..\\..\\..\\..\\..\\data\\original\\BPIC11.xes");
+            //string outputPathInclFileName = "..\\..\\..\\..\\..\\data\\transformed\\bpic11\\bpic11_transformed_"+numberOfEvents+".csv";
+            // BPIC13
+            //XDocument doc = XDocument.Load("..\\..\\..\\..\\..\\data\\original\\BPIC13.xes");
+            //string outputPathInclFileName = "..\\..\\..\\..\\..\\data\\transformed\\bpic13\\bpic13_transformed_"+numberOfEvents+".csv";
+            // RTFM
+            XDocument doc = XDocument.Load("..\\..\\..\\..\\..\\data\\original\\RTFM.xes");
+            string outputPathInclFileName = "..\\..\\..\\..\\..\\data\\transformed\\rtfm\\rtfm_transformed_"+numberOfEvents+".csv";
+            // RL
+            //XDocument doc = XDocument.Load("..\\..\\..\\..\\..\\data\\original\\RL.xes");
+            //string outputPathInclFileName = "..\\..\\..\\..\\..\\data\\transformed\\rl\\rl_transformed_"+numberOfEvents+".csv";
 
             var root = doc.Root;
-            var traces = root.Elements("trace");
-            labelingHospital(traces);
-            //labelingIncidentMgmt(traces);
+            var traces = root.Elements(tag_trace);
+
+            //labelingHospital(traces); // For bpic11
+            //labelingIncidentMgmt(traces);  // For bpic13
+            labelingRTFM(traces); // For RTFM
+            //labelingRL(traces); // For RL
+
 
             //#######################################################################################
             //check if event variables need to be transformed to trace variables
@@ -34,13 +47,13 @@ namespace MLatBPM_DataPreprocessing
             //then the variable can be transformed to a trace variable 
             //#######################################################################################
             List<string> eventVarsKeys = new List<string>();
-            var eventVarsFirstTrace = traces.ElementAt(0).Elements("event").Elements();
+            var eventVarsFirstTrace = traces.ElementAt(0).Elements(tag_event).Elements();
 
             foreach(var trace in traces)
             {
                 foreach(string evVar in eventVarsKeys)
                 {
-                    var eventsInTrace = trace.Elements("event");
+                    var eventsInTrace = trace.Elements(tag_event);
                     var varInFirstEvent = eventsInTrace.ElementAt(0).Elements().Where(x => (string)x.Attribute("key") == evVar).First();
 
                     
@@ -74,18 +87,13 @@ namespace MLatBPM_DataPreprocessing
             {
                 foreach (string evVar in eventVarsKeys)
                 {
-                    trace.Add(trace.Elements("event").ElementAt(0).Elements().Where(x => (string)x.Attribute("key") == evVar).First());
+                    trace.Add(trace.Elements(tag_event).ElementAt(0).Elements().Where(x => (string)x.Attribute("key") == evVar).First());
                 }
             }
             foreach(string evVar in eventVarsKeys)
             {
-                traces.Elements("event").Elements().Where(x => (string)x.Attribute("key") == evVar).Remove();
+                traces.Elements(tag_event).Elements().Where(x => (string)x.Attribute("key") == evVar).Remove();
             }
-            
-
-
-
-
 
 
             //#######################################################################################
@@ -93,19 +101,14 @@ namespace MLatBPM_DataPreprocessing
             //for traces with a sufficient number of events, 
             //remove events that exceed the number of events that are supposed to be included in the log
             //#######################################################################################
+            var tracesToRemove = from trace in traces where trace.Elements(tag_event).Count() <= numberOfEvents select trace;
+            tracesToRemove.Remove();
+
             foreach (var trace in traces)
             {
-                if(trace.Elements("event").Count() <= numberOfEvents)
+                while (trace.Elements(tag_event).Count() > numberOfEvents)
                 {
-                    trace.Remove();
-                }
-                else
-                {
-                    while(trace.Elements("event").Count() > numberOfEvents)
-                    {
-                        trace.Elements("event").Last().Remove();
-                    }
-
+                    trace.Elements(tag_event).Last().Remove();
                 }
             }
 
@@ -118,7 +121,7 @@ namespace MLatBPM_DataPreprocessing
             //#######################################################################################
             List<string> traceVariableNames = new List<string>();
 
-            var traceVariables = traces.Elements().Where(x => (string)x.Name.LocalName != "event");
+            var traceVariables = traces.Elements().Where(x => (string)x.Name.LocalName != "event"); // this should be "event" instead of "tag_event"
             foreach(var traceVariable in traceVariables)
             {
                 traceVariableNames.Add(traceVariable.Attribute("key").Value);
@@ -144,11 +147,11 @@ namespace MLatBPM_DataPreprocessing
             }
 
             //remove identified trace attributes from traces
-            
             foreach (string traceVariableToExclude in traceVariablesExcludedFromLog)
             {
                 traces.Elements().Where(x => (string)x.Attribute("key") == traceVariableToExclude).Remove();
             }
+
 
             //get all variables from relevant events and check if they need to be included in the data set
             //if they only occur in less than 1% of the traces, the variables are removed.
@@ -167,7 +170,7 @@ namespace MLatBPM_DataPreprocessing
                 //get all attributes for event i in all traces
                 foreach (var trace in traces)
                 {
-                    var attr = trace.Elements("event").ElementAt(i).Elements();
+                    var attr = trace.Elements(tag_event).ElementAt(i).Elements();
 
                     foreach(var a in attr)
                     {
@@ -193,7 +196,7 @@ namespace MLatBPM_DataPreprocessing
                 //remove identified attributes from events i in traces
                 foreach (var trace in traces)
                 {
-                    var attr = trace.Elements("event").ElementAt(i).Elements();
+                    var attr = trace.Elements(tag_event).ElementAt(i).Elements();
 
                     foreach (var variableExcluded in eventVariablesExcludedFromLog[i])
                     {
@@ -245,7 +248,7 @@ namespace MLatBPM_DataPreprocessing
             foreach(string eventVar in totalEventVariablesIncludedInLog)
                 {
                 //get datatype of trace Var
-                var eventVarElements = traces.Elements("event").Elements().Where(x => (string)x.Attribute("key") == eventVar);
+                var eventVarElements = traces.Elements(tag_event).Elements().Where(x => (string)x.Attribute("key") == eventVar);
                 bool bDictRequired = false;
 
                 foreach (var eventVarElement in eventVarElements)
@@ -267,6 +270,22 @@ namespace MLatBPM_DataPreprocessing
 
                     dictEvent.Add(new Tuple<string, string[]>(eventVar, eventVarElementsValues.Distinct().ToArray()));
                 }
+            }
+
+            //#######################################################################################
+            //Convert date attributes to integers
+            //#######################################################################################
+            var dateTranslation = traces.Descendants().Where(x => x.Name.LocalName == "date");
+
+            foreach (var dateTr in dateTranslation)
+            {
+                string val = dateTr.Attribute("value").Value;
+
+                val = val.Substring(0, 19).Replace('T', ' ');
+                DateTime myDate = DateTime.ParseExact(val, "yyyy-MM-dd HH:mm:ss",
+                           System.Globalization.CultureInfo.InvariantCulture);
+          
+                dateTr.Attribute("value").Value = myDate.Ticks.ToString();
             }
 
             //#######################################################################################
@@ -301,7 +320,7 @@ namespace MLatBPM_DataPreprocessing
 
                 for(int i = 0; i < numberOfEvents; i++)
                 {
-                    var curEvent = trace.Elements("event").ElementAt(i);
+                    var curEvent = trace.Elements(tag_event).ElementAt(i);
                 
                     foreach(string eventAttribute in eventVariablesIncludedInLog[i])
                     {
@@ -345,7 +364,7 @@ namespace MLatBPM_DataPreprocessing
             {
                 int iTraceIsUrgent = 2;
 
-                var elems_EventName = trace.Elements("event").Elements().Where(x => (string)x.Attribute("key") == "concept:name");
+                var elems_EventName = trace.Elements(tag_event).Elements().Where(x => (string)x.Attribute("key") == "concept:name");
 
                 foreach (var el in elems_EventName)
                 {
@@ -356,19 +375,6 @@ namespace MLatBPM_DataPreprocessing
                     }
                 }
                 trace.SetAttributeValue("Label", iTraceIsUrgent.ToString());
-            }
-
-            var dateTranslation = traces.Descendants().Where(x => x.Name.LocalName == "date");
-
-            foreach (var dateTr in dateTranslation)
-            {
-                string val = dateTr.Attribute("value").Value;
-
-                val = val.Substring(0, 23).Replace('T', ' ');
-                DateTime myDate = DateTime.ParseExact(val, "yyyy-MM-dd HH:mm:ss.fff",
-                           System.Globalization.CultureInfo.InvariantCulture);
-
-                dateTr.Attribute("value").Value = myDate.Ticks.ToString();
             }
         }
 
@@ -381,7 +387,7 @@ namespace MLatBPM_DataPreprocessing
             {
                 int i_LabelIncident = 1;
 
-                var elems_EventName = trace.Elements("event").Elements().Where(x => (string)x.Attribute("key") == "org:group");
+                var elems_EventName = trace.Elements(tag_event).Elements().Where(x => (string)x.Attribute("key") == "org:group");
 
                 foreach (var el in elems_EventName)
                 {
@@ -398,19 +404,6 @@ namespace MLatBPM_DataPreprocessing
 
                 trace.SetAttributeValue("Label", i_LabelIncident.ToString());
             }
-
-            var dateTranslation = traces.Descendants().Where(x => x.Name.LocalName == "date");
-
-            foreach(var dateTr in dateTranslation)
-            {
-                string val = dateTr.Attribute("value").Value;
-
-                val = val.Substring(0, 19).Replace('T', ' ');
-                DateTime myDate = DateTime.ParseExact(val, "yyyy-MM-dd HH:mm:ss",
-                           System.Globalization.CultureInfo.InvariantCulture);
-
-                dateTr.Attribute("value").Value = myDate.Ticks.ToString();
-            }
         }
 
         public static void labelingRTFM(IEnumerable<XElement> traces)
@@ -422,7 +415,7 @@ namespace MLatBPM_DataPreprocessing
             {
                 int iJudgeInvolved = 2;
 
-                var elems_EventName = trace.Elements("event").Elements().Where(x => (string)x.Attribute("key") == "concept:name");
+                var elems_EventName = trace.Elements(tag_event).Elements().Where(x => (string)x.Attribute("key") == "concept:name");
 
                 foreach (var el in elems_EventName)
                 {
@@ -445,7 +438,7 @@ namespace MLatBPM_DataPreprocessing
             {
                 int iAccept = 0;
 
-                var elems_EventName = trace.Elements("event").Elements().Where(x => (string)x.Attribute("key") == "concept:name");
+                var elems_EventName = trace.Elements(tag_event).Elements().Where(x => (string)x.Attribute("key") == "concept:name");
                 string lastEvent = elems_EventName.ElementAt(elems_EventName.Count() - 1).Attribute("value").Value;
 
                 if (lastEvent.Equals("accept"))

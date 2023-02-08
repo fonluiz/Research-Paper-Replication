@@ -1,8 +1,9 @@
 import sys
 
+import math
 import numpy
 from hyperas import optim
-from hyperas.distributions import choice, uniform, conditional
+from hyperas.distributions import choice, uniform
 from hyperopt import Trials, STATUS_OK, tpe
 from keras.layers import Dense, LSTM
 from keras.models import Sequential
@@ -17,10 +18,19 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import normalize
 from sklearn.model_selection import StratifiedKFold
 import globalvar
+import pandas as pd
+import numpy as np
 
 
 def data():
-    dataset = numpy.loadtxt("Data/"+sys.argv[1]+"/"+sys.argv[1]+"_transformedNumberOfEvents_"+sys.argv[2]+".csv", delimiter=",")
+    dataset = numpy.loadtxt("../data/transformed/" + sys.argv[1] + "/" + sys.argv[1] + "_transformed_" + sys.argv[2] + ".csv",
+                            delimiter=";")
+
+    # dataset = pd.read_csv(
+    #     "../data/transformed/" + sys.argv[1] + "/" + sys.argv[1] + "_transformed_" + sys.argv[2] + ".csv",
+    #     delimiter=";")
+    # dataset = dataset.groupby(dataset.columns[len(dataset.columns) - 1], group_keys=False).apply(
+    #     lambda x: x.sample(frac=0.05)).reset_index().to_numpy()
     X = dataset[:, :-1]
     Y = dataset[:, -1]
     X = normalize(X)
@@ -31,33 +41,30 @@ def data():
 
     X_train, X_test, Y_train, Y_test = train_test_split(X, Y, stratify=Y, test_size=0.25)
 
+    #
+    X_train = X_train.reshape((X_train.shape[0], X_train.shape[1], 1))
 
-    X_train = X_train.reshape((X_train.shape[0], int(sys.argv[2]), int(sys.argv[3])))
-
-
-    X_test = X_test.reshape((X_test.shape[0], int(sys.argv[2]), int(sys.argv[3])))
-
-
+    X_test = X_test.reshape((X_test.shape[0], X_test.shape[1], 1))
 
     y_train = to_categorical(Y_train, 2)
     y_test = to_categorical(Y_test, 2)
-
 
     return X_train, y_train, X_test, y_test, X, Y
 
 
 def create_model(x_train, y_train, x_test, y_test):
-
     model = Sequential()
-    model.add(LSTM({{choice([64, 128, 256, 512, 1024])}}, input_shape=(int(sys.argv[2]), int(sys.argv[3])), dropout={{uniform(0, 0.3)}}, return_sequences=True, recurrent_dropout={{uniform(0,0.3)}}))
-    if conditional({{choice(['two', 'three'])}}) == 'three':
-        model.add(LSTM({{choice([64, 128, 256, 512, 1024])}}, input_shape=(int(sys.argv[2]), int(sys.argv[3])),
+    model.add(LSTM({{choice([64, 128, 256, 512, 1024])}}, input_shape=(X_train.shape[1], 1),
+                   dropout={{uniform(0, 0.3)}}, return_sequences=True, recurrent_dropout={{uniform(0, 0.3)}}))
+    if ({{choice(['two', 'three'])}}) == 'three':
+        model.add(LSTM({{choice([64, 128, 256, 512, 1024])}}, input_shape=(X_train.shape[1], 1),
                        dropout={{uniform(0, 0.3)}}, return_sequences=True, recurrent_dropout={{uniform(0, 0.3)}}))
-        if conditional({{choice(['three', 'four'])}}) == 'four':
-            model.add(LSTM({{choice([64, 128, 256, 512, 1024])}}, input_shape=(int(sys.argv[2]), int(sys.argv[3])),
+        if ({{choice(['three', 'four'])}}) == 'four':
+            model.add(LSTM({{choice([64, 128, 256, 512, 1024])}}, input_shape=(X_train.shape[1], 1),
                            dropout={{uniform(0, 0.3)}}, return_sequences=True, recurrent_dropout={{uniform(0, 0.3)}}))
-    model.add(LSTM({{choice([64, 128, 256, 512, 1024])}}, input_shape=(int(sys.argv[2]), int(sys.argv[3])), dropout={{uniform(0, 0.3)}}, recurrent_dropout={{uniform(0, 0.3)}}))
-    model.add(Dense(2, activation={{choice(['softmax', 'softplus', 'softsign', 'relu', 'tanh', 'sigmoid'])}}))
+    model.add(LSTM({{choice([64, 128, 256, 512, 1024])}}, input_shape=(X_train.shape[1], 1),
+                   dropout={{uniform(0, 0.3)}}, recurrent_dropout={{uniform(0, 0.3)}}))
+    model.add(Dense(2, activation='sigmoid'))
     model.summary()
 
     adam = keras.optimizers.Adam(lr={{choice([10 ** -6, 10 ** -5, 10 ** -4, 10 ** -3, 10 ** -2, 10 ** -1])}},
@@ -74,7 +81,6 @@ def create_model(x_train, y_train, x_test, y_test):
     else:
         optim = sgd
 
-
     model.compile(loss='binary_crossentropy',
                   optimizer=optim,
                   metrics=['accuracy', globalvar.f1, globalvar.precision, globalvar.recall, globalvar.auc])
@@ -85,39 +91,32 @@ def create_model(x_train, y_train, x_test, y_test):
               callbacks=callbacks_list,
               validation_data=(X_test, y_test),
               verbose=0
-             )
+              )
     score = model.evaluate(X_test, y_test, verbose=0)
-
 
     accuracy = score[1]
     return {'loss': -accuracy, 'status': STATUS_OK, 'model': model}
 
 
-
-
 if __name__ == "__main__":
 
+    dataset = numpy.loadtxt(
+        "../data/transformed/" + sys.argv[1] + "/" + sys.argv[1] + "_transformed_" + sys.argv[2] + ".csv",
+        delimiter=";")
 
-    dataset = numpy.loadtxt("Data/" + sys.argv[1] +"/"+sys.argv[1]+ "_transformedNumberOfEvents_" + sys.argv[2] + ".csv",
-                            delimiter=",")
-    sys.argv[3] = str(int((dataset.shape[1] - 1) / int(sys.argv[2])))
+    sys.argv[3] = str(math.floor((int((dataset.shape[1] - 1) / int(sys.argv[2])))))
     globalvar.timestep = int(sys.argv[2])
     globalvar.numfeatures = int((dataset.shape[1] - 1) / globalvar.timestep)
 
-
-
-
-
     best_run, best_model = optim.minimize(model=create_model,
-                                      data=data,
-                                      algo=tpe.suggest,
-                                      max_evals=20,
-                                      trials=Trials(),
-                                      eval_space=True,
-                                      )
+                                          data=data,
+                                          algo=tpe.suggest,
+                                          max_evals=1,
+                                          trials=Trials(),
+                                          eval_space=True,
+                                          )
 
     X_train, Y_train, X_test, Y_test, X, Y = data()
-
 
     print("Evalutation of best performing model:")
     print(best_model.evaluate(X_test, Y_test))
@@ -126,8 +125,7 @@ if __name__ == "__main__":
     print("Best performing model chosen hyper-parameters:")
     print(best_run)
 
-
-    kfold = StratifiedKFold(n_splits=10, shuffle=True, random_state=7)
+    kfold = StratifiedKFold(n_splits=3, shuffle=True, random_state=7)
     cvscoresAcc = []
     cvscoresF1 = []
     cvscoresPrecision = []
@@ -139,17 +137,16 @@ if __name__ == "__main__":
     cvscoresRecallSK = []
     cvscoresAUCSK = []
 
-    X = X.reshape((X.shape[0], globalvar.timestep, globalvar.numfeatures))
+    # X = X.reshape((X.shape[0], X.shape[1], 1))
     Y_cat = to_categorical(Y, 2)
     callbacks_list = [globalvar.earlystop]
 
     for train, test in kfold.split(X, Y):
-
-
-        best_model.fit(X[train], Y_cat[train], epochs=best_run["epochs"], callbacks=callbacks_list, batch_size=best_run["batch_size"],
+        best_model.fit(X[train], Y_cat[train], epochs=best_run["epochs"], callbacks=callbacks_list,
+                       batch_size=best_run["batch_size"],
                        verbose=0)
 
-        y_pred = best_model.predict_classes(X_test).round()
+        y_pred = np.argmax(best_model.predict(X_test), axis=1).round()
         print(y_pred)
         scores = best_model.evaluate(X[test], Y_cat[test], verbose=0)
         print("%s: %.2f%%" % (best_model.metrics_names[1], scores[1] * 100))
@@ -172,11 +169,12 @@ if __name__ == "__main__":
                 numpy.mean(cvscoresRecall), numpy.mean(cvscoresAUC)]
     measuresSK = [numpy.mean(cvscoresAccSK), numpy.mean(cvscoresF1SK), numpy.mean(cvscoresPrecisionSK),
                   numpy.mean(cvscoresRecallSK), numpy.mean(cvscoresAUCSK)]
-    numpy.savetxt("Results/" + sys.argv[1] + "_" + str(globalvar.timestep) + ".csv", numpy.atleast_2d(measures),
-                  delimiter=',', fmt='%6f', header="acc, f1, precision, recall, auc")
-    numpy.savetxt("Results/" + sys.argv[1] + "_" + str(globalvar.timestep) + "_SK.csv", numpy.atleast_2d(measuresSK),
-                  delimiter=',', fmt='%6f', header="acc, f1, precision, recall, auc")
-    text_file = open("Results/Hyperparameters" + sys.argv[1] + "_" + str(globalvar.timestep) + ".txt", "w")
+
+    numpy.savetxt("../data/results/lstm/" + sys.argv[1] + "/" + sys.argv[1] + "_" + str(sys.argv[2]) + ".csv",
+                  numpy.atleast_2d(measures), delimiter=',', fmt='%6f', header="acc, f1, precision, recall, auc")
+    numpy.savetxt("../data/results/lstm/" + sys.argv[1] + "/" + sys.argv[1] + "_" + str(sys.argv[2]) + "_SK.csv",
+                  numpy.atleast_2d(measuresSK), delimiter=',', fmt='%6f', header="acc, f1, precision, recall, auc")
+    text_file = open(
+        "../data/results/lstm/" + sys.argv[1] + "/hyperparameters" + sys.argv[1] + "_" + str(sys.argv[2]) + ".txt", "w")
     text_file.write(str(best_run))
     text_file.close()
-
